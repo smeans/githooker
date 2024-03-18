@@ -55,3 +55,4 @@ Save this file in `/lib/systemd/system/githooker.service` and enable it:
 ```
 systemctl enable githooker --now
 ```
+6) Now you can create whatever scripts or processes you want to execute when your projects are pushed to github. The hook payload will be sent to the child process on stdin in JSON format.
