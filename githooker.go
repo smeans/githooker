@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
@@ -10,12 +12,18 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
+	"path/filepath"
+	"strconv"
 	"strings"
+	"time"
 )
 
-var DebugMode = os.Getenv("GH_DEBUG") != ""
 var ListenPort = os.Getenv("GH_LISTEN_PORT")
 var HMACKey = os.Getenv("GH_HMAC_KEY")
+var CmdRoot = os.Getenv("GH_CMD_ROOT")
+var MaxChildRunTimeSeconds = 90
+var CmdExtensions []string
 
 func validMAC(message, messageMAC, key []byte) bool {
 	mac := hmac.New(sha256.New, key)
@@ -44,6 +52,35 @@ func parseSig(s string) []byte {
 	}
 
 	return nil
+}
+
+func execHookCmd(cmd string, data []byte) bool {
+	if _, err := os.Stat(cmd); err != nil {
+		return false
+	}
+
+	ctx, _ := context.WithTimeout(context.Background(), time.Duration(MaxChildRunTimeSeconds*int(time.Second)))
+
+	cc := exec.CommandContext(ctx, cmd)
+	cc.Stdin = bytes.NewReader(data)
+	cc.Stdout = os.Stdout
+	cc.Stderr = os.Stderr
+
+	log.Printf("running %s\n", cmd)
+	if err := cc.Start(); err != nil {
+		log.Printf("error running command '%s': %v\n", cmd, err.Error())
+
+		return false
+	}
+
+	log.Printf("command '%s' executing\n", cmd)
+
+	go func() {
+		cc.Wait()
+		log.Printf("command '%s' completed", cmd)
+	}()
+
+	return true
 }
 
 func handleHook(w http.ResponseWriter, r *http.Request) {
@@ -82,28 +119,80 @@ func handleHook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var body interface{}
+	var body any
 	if err = json.Unmarshal(data, &body); err != nil {
 		log.Printf("unable to unmarshal body: %v", err)
 		sendResponse(w, http.StatusBadRequest, "bad request body")
 		return
 	}
 
-	fmt.Print(body)
+	cmd := ""
+	if bm, ok := body.(map[string]any); ok {
+		ref := bm["ref"].(string)
+
+		if rm, ok := bm["repository"].(map[string]any); ok {
+			if fn, ok := rm["full_name"].(string); ok {
+				cmd = filepath.Join(CmdRoot, filepath.Clean(fn), filepath.Clean(ref))
+			}
+		}
+	}
+
+	if cmd == "" {
+		log.Printf("bad request body format: %v", body)
+		sendResponse(w, http.StatusBadRequest, "bad request body")
+		return
+	}
+
+	log.Printf("executing command %v", cmd)
+
+	cmdStarted := execHookCmd(cmd, data)
+	if !cmdStarted {
+		for _, ext := range CmdExtensions {
+			cmdStarted = execHookCmd(cmd+ext, data)
+			if cmdStarted {
+				break
+			}
+		}
+	}
+
+	if !cmdStarted {
+		log.Printf("unable to locate command '%s' (tried extensions %v)", cmd, CmdExtensions)
+	}
 
 	sendResponse(w, http.StatusOK, "hook processed")
 }
 
-func main() {
+func initConfig() {
 	if ListenPort == "" {
 		ListenPort = ":4040"
+	}
+
+	if CmdRoot == "" {
+		CmdRoot = "/etc/githooker"
 	}
 
 	if HMACKey == "" {
 		log.Fatal("no GH_HMAC_KEY environment variable set (github hook secret)")
 	}
 
+	if rts := os.Getenv("GH_MAX_RUN_SECS"); rts != "" {
+		if i, err := strconv.Atoi(rts); err == nil {
+			MaxChildRunTimeSeconds = i
+		} else {
+			log.Printf("warning: GH_MAX_RUN_SECS is not a valid integer, ignoring (%s)", rts)
+		}
+	}
+
+	if cel := os.Getenv("GH_CMD_EXTENSIONS"); cel != "" {
+		CmdExtensions = strings.Split(cel, " ")
+	}
+}
+
+func main() {
+	initConfig()
+
 	http.HandleFunc("/", handleHook)
 
+	log.Printf("githooker: initialized")
 	log.Fatal(http.ListenAndServe(ListenPort, nil))
 }
