@@ -128,7 +128,13 @@ func handleHook(w http.ResponseWriter, r *http.Request) {
 
 	cmd := ""
 	if bm, ok := body.(map[string]any); ok {
-		ref := bm["ref"].(string)
+		ref, ok := bm["ref"].(string)
+
+		if !ok {
+			log.Printf("non-push payload; ignoring")
+
+			return
+		}
 
 		if rm, ok := bm["repository"].(map[string]any); ok {
 			if fn, ok := rm["full_name"].(string); ok {

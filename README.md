@@ -25,7 +25,7 @@ GH_CMD_EXTENSIONS | | space-separated list of file extensions to try for hook co
 3) Set up the required environment variables for your installation. At a minimum, you will need to set `GH_HMAC_KEY` with a secret value you will configure as part of your github hook setup (once again, I recommend a random UUID).
 4) I recommend running githooker from the command line first while setting up the github hooks for your repositories. You will be able to see the full path of the hook command `githooker` will be attempting to run. Command paths are constructed using the `GH_CMD_ROOT` environment variable, the full repository name, and the ref path of the hook. For example, after pushing an update to the `githooker` project, the service would attempt to execute the following command:
 ```
-\etc\githooker\smeans\githooker\refs\heads\main
+/etc/githooker/smeans/githooker/refs/heads/main
 ```
 On Linux, this can be a shell script, an executable, a symlink, etc. On Windows, executables must have a `.exe` extension, so you will need to set the `GH_CMD_EXTENSIONS` variable:
 ```
