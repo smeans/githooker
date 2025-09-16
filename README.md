@@ -22,7 +22,7 @@ GH_CMD_EXTENSIONS | | space-separated list of file extensions to try for hook co
             proxy_pass http://127.0.0.1:4040;
         }
 ```
-3) Set up the required environment variables for your installation. At a minimum, you will need to set `GH_HMAC_KEY` with a secret value you will configure as part of your github hook setup (once again, I recommend a random UUID).
+3) Set up the required environment variables for your installation. At a minimum, you will need to set `GH_HMAC_KEY` with a secret value you will configure as part of your github hook setup (once again, I recommend a random UUID). Also, set the Webhook content type to application/json.
 4) I recommend running githooker from the command line first while setting up the github hooks for your repositories. You will be able to see the full path of the hook command `githooker` will be attempting to run. Command paths are constructed using the `GH_CMD_ROOT` environment variable, the full repository name, and the ref path of the hook. For example, after pushing an update to the `githooker` project, the service would attempt to execute the following command:
 ```
 /etc/githooker/smeans/githooker/refs/heads/main
